@@ -63,6 +63,22 @@ module ArJdbc
         end
     end
 
+    def redshift_version
+      @redshift_version ||=
+        begin
+          value = select_value('SELECT version()')
+          if value =~ /Redshift (\d+)\.(\d+)\.(\d+)/
+            ($1.to_i * 100000) + ($2.to_i * 1000) + $3.to_i
+          else
+            0
+          end
+        end
+    end
+
+    def redshift?
+      redshift_version != 0
+    end
+
     def use_insert_returning?
       if @use_insert_returning.nil?
         @use_insert_returning = supports_insert_with_returning?
@@ -94,9 +110,9 @@ module ArJdbc
       # TIMESTAMP WITH ZONE types in UTC.
       # (SET TIME ZONE does not use an equals sign like other SET variables)
       if ActiveRecord::Base.default_timezone == :utc
-        execute("SET time zone 'UTC'", 'SCHEMA')
+        execute("SET time zone 'UTC'", 'SCHEMA') unless redshift?
       elsif tz = local_tz
-        execute("SET time zone '#{tz}'", 'SCHEMA')
+        execute("SET time zone '#{tz}'", 'SCHEMA') unless redshift?
       end # if defined? ActiveRecord::Base.default_timezone
 
       # SET statements from :variables config hash
@@ -742,12 +758,13 @@ module ArJdbc
 
     # Returns the current client message level.
     def client_min_messages
+      return nil if redshift?
       select_value('SHOW client_min_messages', 'SCHEMA')
     end
 
     # Set the client message level.
     def client_min_messages=(level)
-      execute("SET client_min_messages TO '#{level}'", 'SCHEMA')
+      execute("SET client_min_messages TO '#{level}'", 'SCHEMA') unless redshift?
     end
 
     # Gets the maximum number columns postgres has, default 32
